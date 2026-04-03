@@ -1,14 +1,3 @@
----
-title: GST Audit Environment
-emoji: 📊
-colorFrom: green
-colorTo: blue
-sdk: docker
-pinned: true
-license: mit
-short_description: India's first GST Audit RL Environment for AI agent training
----
-
 # GST Audit Environment
 
 **India's first Reinforcement Learning environment for GST compliance auditing**
