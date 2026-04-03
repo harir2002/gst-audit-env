@@ -1,0 +1,21 @@
+.env
+.env.*
+
+# Python
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# Virtual env
+.venv/
+venv/
+
+# Local caches
+.cache/
+
+# Node (if ever used)
+node_modules/
+
+# Nested git folders (e.g., sub-projects)
+**/.git/
+

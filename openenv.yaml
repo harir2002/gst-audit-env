@@ -1,0 +1,36 @@
+name: gst-audit-env
+version: "1.0.0"
+description: "RL environment for Indian GST compliance auditing - GSTR mismatch detection, ITC eligibility, and fraud detection"
+tags:
+  - openenv
+  - tax-compliance
+  - india
+  - real-world
+tasks:
+  - id: gstr_mismatch
+    difficulty: easy
+    description: "Detect GSTR-1 vs GSTR-3B mismatch and calculate tax difference with legal action"
+    max_steps: 1
+    reward_threshold: 1.0
+  - id: itc_eligibility
+    difficulty: medium
+    description: "Calculate eligible ITC after applying Section 17(5) blocked credits under CGST Act"
+    max_steps: 1
+    reward_threshold: 1.0
+  - id: fraud_detection
+    difficulty: hard
+    description: "Detect fake invoice/missing trader fraud, calculate fraudulent ITC, recommend enforcement"
+    max_steps: 1
+    reward_threshold: 1.0
+observation_space:
+  type: text
+  fields:
+    - task_id
+    - instructions
+    - data
+    - feedback
+    - step
+action_space:
+  type: text
+  description: "Free-form text response containing analysis, calculations, and recommendations"
+reward_range: [0.0, 1.0]
