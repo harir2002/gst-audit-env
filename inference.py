@@ -1,16 +1,25 @@
+# /// script
+# requires-python = ">=3.10"
+# dependencies = [
+#   "requests>=2.28.0",
+#   "openai>=1.0.0",
+#   "python-dotenv>=1.0.0",
+# ]
+# ///
+
 import os
 import requests
 from openai import OpenAI
 from dotenv import load_dotenv
-load_dotenv()
 
+load_dotenv()
 
 # ── Mandatory env vars ──
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
-MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN = os.getenv("HF_TOKEN", "")
-ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
-BENCHMARK = "gst-audit-env"
+MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+HF_TOKEN     = os.getenv("HF_TOKEN", "")
+ENV_URL      = os.getenv("ENV_URL", "http://localhost:8000")
+BENCHMARK    = "gst-audit-env"
 
 client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
 
@@ -21,13 +30,30 @@ You know all GST rules including Section 17(5) blocked credits, GSTR-1/3B reconc
 ITC eligibility, fake invoice detection, and enforcement under CGST Act 2017.
 Always give specific rupee amounts, section numbers, and clear recommendations."""
 
+
 def run_task(task_id: str):
     # Reset environment
-    obs_resp = requests.post(f"{ENV_URL}/reset", params={"task_id": task_id})
-    obs = obs_resp.json()
+    try:
+        obs_resp = requests.post(
+            f"{ENV_URL}/reset",
+            params={"task_id": task_id},
+            timeout=30
+        )
+        obs_resp.raise_for_status()
+        obs = obs_resp.json()
+    except requests.exceptions.ConnectionError as e:
+        print(f"[ERROR] Could not connect to ENV server: {e}", flush=True)
+        print(f"[END] success=false steps=0 rewards=0.00", flush=True)
+        print("", flush=True)
+        return 0.0
+    except Exception as e:
+        print(f"[ERROR] Reset failed: {e}", flush=True)
+        print(f"[END] success=false steps=0 rewards=0.00", flush=True)
+        print("", flush=True)
+        return 0.0
 
-    case_text = obs.get("data", {}).get("case", "")
-    question = obs.get("data", {}).get("question", "")
+    case_text    = obs.get("data", {}).get("case", "")
+    question     = obs.get("data", {}).get("question", "")
     instructions = obs.get("instructions", "")
 
     prompt = f"""{instructions}
@@ -42,10 +68,10 @@ Provide detailed analysis with specific rupee amounts, section references, and r
     # ── [START] log ──
     print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}", flush=True)
 
-    step_num = 0
-    rewards = []
+    step_num   = 0
+    rewards    = []
     last_error = "null"
-    success = False
+    success    = False
 
     try:
         # LLM generates answer
@@ -53,26 +79,29 @@ Provide detailed analysis with specific rupee amounts, section references, and r
             model=MODEL_NAME,
             messages=[
                 {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user", "content": prompt}
+                {"role": "user",   "content": prompt}
             ],
             max_tokens=500,
             temperature=0.1
         )
         action_text = response.choices[0].message.content.strip()
-        # Sanitize for single-line log
-        action_log = action_text[:80].replace("\n", " ").replace("\r", "")
-        print(f"FULL ANSWER: {action_text[:500]}")
+        action_log  = action_text[:80].replace("\n", " ").replace("\r", "")
+        print(f"FULL ANSWER: {action_text[:500]}", flush=True)
+
         # Step
-        result = requests.post(
+        step_resp = requests.post(
             f"{ENV_URL}/step",
-            json={"content": action_text}
-        ).json()
+            json={"content": action_text},
+            timeout=30
+        )
+        step_resp.raise_for_status()
+        result = step_resp.json()
 
         step_num = 1
-        reward = round(result["reward"], 2)
-        done = result["done"]
+        reward   = round(result["reward"], 2)
+        done     = result["done"]
         rewards.append(reward)
-        success = reward >= 0.5
+        success  = reward >= 0.5
 
         # ── [STEP] log ──
         print(
@@ -81,6 +110,13 @@ Provide detailed analysis with specific rupee amounts, section references, and r
             flush=True
         )
 
+    except requests.exceptions.ConnectionError as e:
+        last_error = f"ConnectionError: {str(e)[:80]}"
+        rewards.append(0.00)
+        print(
+            f"[STEP] step=1 action=null reward=0.00 done=true error={last_error}",
+            flush=True
+        )
     except Exception as e:
         last_error = str(e)[:100]
         rewards.append(0.00)
@@ -98,6 +134,7 @@ Provide detailed analysis with specific rupee amounts, section references, and r
     print("", flush=True)
 
     return sum(rewards)
+
 
 # ── Run all tasks ──
 total = 0.0
