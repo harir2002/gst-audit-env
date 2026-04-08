@@ -1,11 +1,12 @@
-# /// script
-# requires-python = ">=3.10"
-# dependencies = [
-#   "requests>=2.28.0",
-#   "openai>=1.0.0",
-#   "python-dotenv>=1.0.0",
-# ]
-# ///
+import subprocess, sys
+
+subprocess.check_call([
+    sys.executable, "-m", "pip", "install",
+    "requests>=2.28.0",
+    "openai>=1.0.0",
+    "python-dotenv>=1.0.0",
+    "--quiet"
+])
 
 import os
 import requests
@@ -32,7 +33,6 @@ Always give specific rupee amounts, section numbers, and clear recommendations."
 
 
 def run_task(task_id: str):
-    # Reset environment
     try:
         obs_resp = requests.post(
             f"{ENV_URL}/reset",
@@ -65,7 +65,6 @@ QUESTION: {question}
 
 Provide detailed analysis with specific rupee amounts, section references, and recommendations."""
 
-    # ── [START] log ──
     print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}", flush=True)
 
     step_num   = 0
@@ -74,7 +73,6 @@ Provide detailed analysis with specific rupee amounts, section references, and r
     success    = False
 
     try:
-        # LLM generates answer
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -88,7 +86,6 @@ Provide detailed analysis with specific rupee amounts, section references, and r
         action_log  = action_text[:80].replace("\n", " ").replace("\r", "")
         print(f"FULL ANSWER: {action_text[:500]}", flush=True)
 
-        # Step
         step_resp = requests.post(
             f"{ENV_URL}/step",
             json={"content": action_text},
@@ -103,7 +100,6 @@ Provide detailed analysis with specific rupee amounts, section references, and r
         rewards.append(reward)
         success  = reward >= 0.5
 
-        # ── [STEP] log ──
         print(
             f"[STEP] step={step_num} action={action_log!r} "
             f"reward={reward:.2f} done={str(done).lower()} error={last_error}",
@@ -113,24 +109,14 @@ Provide detailed analysis with specific rupee amounts, section references, and r
     except requests.exceptions.ConnectionError as e:
         last_error = f"ConnectionError: {str(e)[:80]}"
         rewards.append(0.00)
-        print(
-            f"[STEP] step=1 action=null reward=0.00 done=true error={last_error}",
-            flush=True
-        )
+        print(f"[STEP] step=1 action=null reward=0.00 done=true error={last_error}", flush=True)
     except Exception as e:
         last_error = str(e)[:100]
         rewards.append(0.00)
-        print(
-            f"[STEP] step=1 action=null reward=0.00 done=true error={last_error}",
-            flush=True
-        )
+        print(f"[STEP] step=1 action=null reward=0.00 done=true error={last_error}", flush=True)
 
-    # ── [END] log ──
     rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(
-        f"[END] success={str(success).lower()} steps={step_num} rewards={rewards_str}",
-        flush=True
-    )
+    print(f"[END] success={str(success).lower()} steps={step_num} rewards={rewards_str}", flush=True)
     print("", flush=True)
 
     return sum(rewards)
