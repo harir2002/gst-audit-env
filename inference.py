@@ -29,6 +29,14 @@ Always give specific rupee amounts, section numbers, and clear recommendations."
 
 
 def run_task(task_id: str):
+    # ── [START] log ──
+    print(f"[START] task={task_id}", flush=True)
+
+    step_num   = 0
+    rewards    = []
+    last_error = "null"
+    success    = False
+
     try:
         obs_resp = requests.post(
             f"{ENV_URL}/reset",
@@ -38,13 +46,13 @@ def run_task(task_id: str):
         obs_resp.raise_for_status()
         obs = obs_resp.json()
     except requests.exceptions.ConnectionError as e:
-        print(f"[ERROR] Could not connect to ENV server: {e}", flush=True)
-        print(f"[END] success=false steps=0 rewards=0.00", flush=True)
+        print(f"[STEP] step=1 reward=0.00 error=ConnectionError", flush=True)
+        print(f"[END] task={task_id} score=0.00 steps=0", flush=True)
         print("", flush=True)
         return 0.0
     except Exception as e:
-        print(f"[ERROR] Reset failed: {e}", flush=True)
-        print(f"[END] success=false steps=0 rewards=0.00", flush=True)
+        print(f"[STEP] step=1 reward=0.00 error={str(e)[:80]}", flush=True)
+        print(f"[END] task={task_id} score=0.00 steps=0", flush=True)
         print("", flush=True)
         return 0.0
 
@@ -61,13 +69,6 @@ QUESTION: {question}
 
 Provide detailed analysis with specific rupee amounts, section references, and recommendations."""
 
-    print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}", flush=True)
-
-    step_num   = 0
-    rewards    = []
-    last_error = "null"
-    success    = False
-
     try:
         response = client.chat.completions.create(
             model=MODEL_NAME,
@@ -80,7 +81,6 @@ Provide detailed analysis with specific rupee amounts, section references, and r
         )
         action_text = response.choices[0].message.content.strip()
         action_log  = action_text[:80].replace("\n", " ").replace("\r", "")
-        print(f"FULL ANSWER: {action_text[:500]}", flush=True)
 
         step_resp = requests.post(
             f"{ENV_URL}/step",
@@ -96,28 +96,28 @@ Provide detailed analysis with specific rupee amounts, section references, and r
         rewards.append(reward)
         success  = reward >= 0.5
 
+        # ── [STEP] log ──
         print(
-            f"[STEP] step={step_num} action={action_log!r} "
-            f"reward={reward:.2f} done={str(done).lower()} error={last_error}",
+            f"[STEP] step={step_num} reward={reward:.2f} done={str(done).lower()} error={last_error}",
             flush=True
         )
 
-    except requests.exceptions.ConnectionError as e:
-        last_error = f"ConnectionError: {str(e)[:80]}"
-        rewards.append(0.00)
-        print(f"[STEP] step=1 action=null reward=0.00 done=true error={last_error}", flush=True)
     except Exception as e:
         last_error = str(e)[:100]
         rewards.append(0.00)
-        print(f"[STEP] step=1 action=null reward=0.00 done=true error={last_error}", flush=True)
+        step_num = 1
+        print(f"[STEP] step=1 reward=0.00 done=true error={last_error}", flush=True)
 
-    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
-    print(f"[END] success={str(success).lower()} steps={step_num} rewards={rewards_str}", flush=True)
+    score = sum(rewards)
+
+    # ── [END] log ── exact format validator expects
+    print(f"[END] task={task_id} score={score:.2f} steps={step_num}", flush=True)
     print("", flush=True)
 
-    return sum(rewards)
+    return score
 
 
+# ── Run all tasks ──
 total = 0.0
 for task in TASKS:
     total += run_task(task)
