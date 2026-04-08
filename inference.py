@@ -12,12 +12,27 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Use os.environ[] directly — validator INJECTS these, no defaults ──
-API_BASE_URL = os.environ["API_BASE_URL"]
-API_KEY      = os.environ["API_KEY"]
-MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-ENV_URL      = os.getenv("ENV_URL", "http://localhost:8000")
+# ── Use ONLY validator-injected env vars ──
+API_BASE_URL = os.environ.get("API_BASE_URL") or "https://router.huggingface.co/v1"
+MODEL_NAME   = os.environ.get("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
+ENV_URL      = os.environ.get("ENV_URL") or "http://localhost:8000"
 BENCHMARK    = "gst-audit-env"
+
+# Read ALL possible key names the validator might inject
+API_KEY = (
+    os.environ.get("API_KEY") or
+    os.environ.get("HF_TOKEN") or
+    os.environ.get("OPENAI_API_KEY") or
+    ""
+)
+
+# Force-override OPENAI_API_KEY so OpenAI SDK doesn't pick up a stale value
+os.environ["OPENAI_API_KEY"] = API_KEY
+
+print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
+print(f"[DEBUG] API_KEY set={'yes' if API_KEY else 'NO - MISSING'}", flush=True)
+print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
+print(f"[DEBUG] ENV_URL={ENV_URL}", flush=True)
 
 client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
@@ -30,7 +45,6 @@ Always give specific rupee amounts, section numbers, and clear recommendations."
 
 
 def run_task(task_id: str):
-    # ── [START] log ──
     print(f"[START] task={task_id}", flush=True)
 
     step_num   = 0
@@ -71,6 +85,7 @@ QUESTION: {question}
 Provide detailed analysis with specific rupee amounts, section references, and recommendations."""
 
     try:
+        print(f"[DEBUG] Calling LLM via proxy...", flush=True)
         response = client.chat.completions.create(
             model=MODEL_NAME,
             messages=[
@@ -82,6 +97,7 @@ Provide detailed analysis with specific rupee amounts, section references, and r
         )
         action_text = response.choices[0].message.content.strip()
         action_log  = action_text[:80].replace("\n", " ").replace("\r", "")
+        print(f"[DEBUG] LLM call SUCCESS", flush=True)
 
         step_resp = requests.post(
             f"{ENV_URL}/step",
@@ -106,10 +122,10 @@ Provide detailed analysis with specific rupee amounts, section references, and r
         last_error = str(e)[:100]
         rewards.append(0.00)
         step_num = 1
+        print(f"[DEBUG] LLM call FAILED: {last_error}", flush=True)
         print(f"[STEP] step=1 reward=0.00 done=true error={last_error}", flush=True)
 
     score = sum(rewards)
-
     print(f"[END] task={task_id} score={score:.2f} steps={step_num}", flush=True)
     print("", flush=True)
 
