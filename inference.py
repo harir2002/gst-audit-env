@@ -1,10 +1,7 @@
 import subprocess, sys
-
 subprocess.check_call([
     sys.executable, "-m", "pip", "install",
-    "requests>=2.28.0",
-    "openai>=1.0.0",
-    "python-dotenv>=1.0.0",
+    "requests>=2.28.0", "openai>=1.0.0", "python-dotenv>=1.0.0",
     "--quiet"
 ])
 
@@ -15,7 +12,6 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Mandatory env vars ──
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
 HF_TOKEN     = os.getenv("HF_TOKEN", "")
@@ -122,7 +118,6 @@ Provide detailed analysis with specific rupee amounts, section references, and r
     return sum(rewards)
 
 
-# ── Run all tasks ──
 total = 0.0
 for task in TASKS:
     total += run_task(task)
