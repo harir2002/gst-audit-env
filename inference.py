@@ -12,10 +12,10 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-# ── Mandatory env vars (API_KEY is injected by validator's LiteLLM proxy) ──
-API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
+# ── Use os.environ[] directly — validator INJECTS these, no defaults ──
+API_BASE_URL = os.environ["API_BASE_URL"]
+API_KEY      = os.environ["API_KEY"]
 MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-API_KEY      = os.getenv("API_KEY") or os.getenv("HF_TOKEN", "")
 ENV_URL      = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK    = "gst-audit-env"
 
@@ -97,7 +97,6 @@ Provide detailed analysis with specific rupee amounts, section references, and r
         rewards.append(reward)
         success  = reward >= 0.5
 
-        # ── [STEP] log ──
         print(
             f"[STEP] step={step_num} reward={reward:.2f} done={str(done).lower()} error={last_error}",
             flush=True
@@ -111,7 +110,6 @@ Provide detailed analysis with specific rupee amounts, section references, and r
 
     score = sum(rewards)
 
-    # ── [END] log ── exact format validator expects
     print(f"[END] task={task_id} score={score:.2f} steps={step_num}", flush=True)
     print("", flush=True)
 
