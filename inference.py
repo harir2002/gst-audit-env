@@ -1,39 +1,22 @@
 import subprocess, sys
+
 subprocess.check_call([
     sys.executable, "-m", "pip", "install",
     "requests>=2.28.0", "openai>=1.0.0", "python-dotenv>=1.0.0",
+    "openenv-core>=0.2.0",
     "--quiet"
 ])
 
 import os
-import requests
 from openai import OpenAI
-from dotenv import load_dotenv
 
-load_dotenv()
+API_BASE_URL = os.environ["API_BASE_URL"]
+API_KEY = os.environ["API_KEY"]
+MODEL_NAME = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
+ENV_URL = os.getenv("ENV_URL", "http://localhost:8000")
+BENCHMARK = "gst-audit-env"
 
-# ── Use ONLY validator-injected env vars ──
-API_BASE_URL = os.environ.get("API_BASE_URL") or "https://router.huggingface.co/v1"
-MODEL_NAME   = os.environ.get("MODEL_NAME") or "Qwen/Qwen2.5-72B-Instruct"
-ENV_URL      = os.environ.get("ENV_URL") or "http://localhost:8000"
-BENCHMARK    = "gst-audit-env"
-
-# Read ALL possible key names the validator might inject
-API_KEY = (
-    os.environ.get("API_KEY") or
-    os.environ.get("HF_TOKEN") or
-    os.environ.get("OPENAI_API_KEY") or
-    ""
-)
-
-# Force-override OPENAI_API_KEY so OpenAI SDK doesn't pick up a stale value
 os.environ["OPENAI_API_KEY"] = API_KEY
-
-print(f"[DEBUG] API_BASE_URL={API_BASE_URL}", flush=True)
-print(f"[DEBUG] API_KEY set={'yes' if API_KEY else 'NO - MISSING'}", flush=True)
-print(f"[DEBUG] MODEL_NAME={MODEL_NAME}", flush=True)
-print(f"[DEBUG] ENV_URL={ENV_URL}", flush=True)
-
 client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
 TASKS = ["gstr_mismatch", "itc_eligibility", "fraud_detection"]
@@ -43,39 +26,50 @@ You know all GST rules including Section 17(5) blocked credits, GSTR-1/3B reconc
 ITC eligibility, fake invoice detection, and enforcement under CGST Act 2017.
 Always give specific rupee amounts, section numbers, and clear recommendations."""
 
+def call_llm(prompt: str) -> str:
+    response = client.chat.completions.create(
+        model=MODEL_NAME,
+        messages=[
+            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "user", "content": prompt}
+        ],
+        max_tokens=500,
+        temperature=0.1
+    )
+    return (response.choices[0].message.content or "").strip()
 
-def run_task(task_id: str):
-    print(f"[START] task={task_id}", flush=True)
+def run_task(task_id: str) -> float:
+    print(f"[START] task={task_id} env={BENCHMARK} model={MODEL_NAME}", flush=True)
 
-    step_num   = 0
-    rewards    = []
-    last_error = "null"
-    success    = False
+    rewards = []
+    step_num = 1
+    success = False
 
     try:
-        obs_resp = requests.post(
-            f"{ENV_URL}/reset",
-            params={"task_id": task_id},
-            timeout=30
+        action_text = call_llm(
+            f"Task: {task_id}\n\nAnalyze this GST audit task and provide detailed findings with rupee amounts and section references."
         )
-        obs_resp.raise_for_status()
-        obs = obs_resp.json()
-    except requests.exceptions.ConnectionError as e:
-        print(f"[STEP] step=1 reward=0.00 error=ConnectionError", flush=True)
-        print(f"[END] task={task_id} score=0.00 steps=0", flush=True)
-        print("", flush=True)
-        return 0.0
     except Exception as e:
-        print(f"[STEP] step=1 reward=0.00 error={str(e)[:80]}", flush=True)
-        print(f"[END] task={task_id} score=0.00 steps=0", flush=True)
+        print(f"[STEP] step=1 action=null reward=0.00 done=true error={str(e)[:100]}", flush=True)
+        print(f"[END] success=false steps=1 score=0.00 rewards=0.00", flush=True)
         print("", flush=True)
         return 0.0
 
-    case_text    = obs.get("data", {}).get("case", "")
-    question     = obs.get("data", {}).get("question", "")
-    instructions = obs.get("instructions", "")
+    reward = 0.0
+    done = True
+    error = "null"
 
-    prompt = f"""{instructions}
+    try:
+        import requests
+        obs_resp = requests.post(f"{ENV_URL}/reset", params={"task_id": task_id}, timeout=15)
+        obs = obs_resp.json()
+
+        case_text = obs.get("data", {}).get("case", "")
+        question = obs.get("data", {}).get("question", "")
+        instructions = obs.get("instructions", "")
+
+        if case_text or question:
+            full_prompt = f"""{instructions}
 
 CASE:
 {case_text}
@@ -83,56 +77,27 @@ CASE:
 QUESTION: {question}
 
 Provide detailed analysis with specific rupee amounts, section references, and recommendations."""
+            action_text = call_llm(full_prompt)
 
-    try:
-        print(f"[DEBUG] Calling LLM via proxy...", flush=True)
-        response = client.chat.completions.create(
-            model=MODEL_NAME,
-            messages=[
-                {"role": "system", "content": SYSTEM_PROMPT},
-                {"role": "user",   "content": prompt}
-            ],
-            max_tokens=500,
-            temperature=0.1
-        )
-        action_text = response.choices[0].message.content.strip()
-        action_log  = action_text[:80].replace("\n", " ").replace("\r", "")
-        print(f"[DEBUG] LLM call SUCCESS", flush=True)
-
-        step_resp = requests.post(
-            f"{ENV_URL}/step",
-            json={"content": action_text},
-            timeout=30
-        )
-        step_resp.raise_for_status()
+        step_resp = requests.post(f"{ENV_URL}/step", json={"content": action_text}, timeout=15)
         result = step_resp.json()
 
-        step_num = 1
-        reward   = round(result["reward"], 2)
-        done     = result["done"]
-        rewards.append(reward)
-        success  = reward >= 0.5
-
-        print(
-            f"[STEP] step={step_num} reward={reward:.2f} done={str(done).lower()} error={last_error}",
-            flush=True
-        )
+        reward = round(result.get("reward", 0.0), 2)
+        done = result.get("done", True)
+        success = reward >= 0.5
 
     except Exception as e:
-        last_error = str(e)[:100]
-        rewards.append(0.00)
-        step_num = 1
-        print(f"[DEBUG] LLM call FAILED: {last_error}", flush=True)
-        print(f"[STEP] step=1 reward=0.00 done=true error={last_error}", flush=True)
+        error = str(e)[:100]
+
+    rewards.append(reward)
+    action_log = action_text[:80].replace("\n", " ").replace("\r", "")
+    print(f"[STEP] step=1 action={action_log!r} reward={reward:.2f} done={str(done).lower()} error={error}", flush=True)
 
     score = sum(rewards)
-    print(f"[END] task={task_id} score={score:.2f} steps={step_num}", flush=True)
+    print(f"[END] success={str(success).lower()} steps={step_num} score={score:.2f} rewards={','.join(f'{r:.2f}' for r in rewards)}", flush=True)
     print("", flush=True)
-
     return score
 
-
-# ── Run all tasks ──
 total = 0.0
 for task in TASKS:
     total += run_task(task)
