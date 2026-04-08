@@ -12,13 +12,14 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
+# ── Mandatory env vars (API_KEY is injected by validator's LiteLLM proxy) ──
 API_BASE_URL = os.getenv("API_BASE_URL", "https://router.huggingface.co/v1")
 MODEL_NAME   = os.getenv("MODEL_NAME", "Qwen/Qwen2.5-72B-Instruct")
-HF_TOKEN     = os.getenv("HF_TOKEN", "")
+API_KEY      = os.getenv("API_KEY") or os.getenv("HF_TOKEN", "")
 ENV_URL      = os.getenv("ENV_URL", "http://localhost:8000")
 BENCHMARK    = "gst-audit-env"
 
-client = OpenAI(base_url=API_BASE_URL, api_key=HF_TOKEN)
+client = OpenAI(base_url=API_BASE_URL, api_key=API_KEY)
 
 TASKS = ["gstr_mismatch", "itc_eligibility", "fraud_detection"]
 
